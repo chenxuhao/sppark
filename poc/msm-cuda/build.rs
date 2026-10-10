@@ -87,6 +87,30 @@ fn main() {
     }
     cc.files(&files).compile("msm_cuda");
 
+    // Host-side multi-threaded Pippenger, available with or without CUDA.
+    let mut cpp = cc::Build::new();
+    cpp.cpp(true)
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("-fno-builtin")
+        .flag_if_supported("-Wno-unused-function")
+        .flag_if_supported("-Wno-subobject-linkage")
+        .define(curve, None);
+    if !cfg!(debug_assertions) {
+        cpp.opt_level(2);
+    }
+    if let Some(def) = cc_opt {
+        cpp.define(def, None);
+    }
+    if let Some(include) = env::var_os("DEP_BLST_C_SRC") {
+        cpp.include(include);
+    }
+    if let Some(include) = env::var_os("DEP_SPPARK_ROOT") {
+        cpp.include(include);
+    }
+    cpp.file("cpu/pippenger_cpu.cpp").compile("msm_cpu");
+    println!("cargo:rerun-if-changed=cpu");
+    println!("cargo:rerun-if-changed=src/lib.c");
+
     if cfg!(target_os = "windows") && !cfg!(target_env = "msvc") {
         return;
     }

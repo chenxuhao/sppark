@@ -80,6 +80,47 @@ pub fn multi_scalar_mult_arkworks<G: AffineCurve>(
     ret
 }
 
+/// Multi-threaded host-side MSM over G1 using sppark's msm/pippenger.hpp.
+/// `nthreads == 0` uses all CPUs in the process' affinity mask.
+pub fn multi_scalar_mult_cpu_arkworks<G: AffineCurve>(
+    points: &[G],
+    scalars: &[<G::ScalarField as PrimeField>::BigInt],
+    nthreads: usize,
+) -> G::Projective {
+    #[cfg_attr(feature = "quiet", allow(improper_ctypes))]
+    extern "C" {
+        fn mult_pippenger_cpu(
+            out: *mut G1Projective,
+            points_with_infinity: *const G1Affine,
+            npoints: usize,
+            scalars: *const Fr,
+            nthreads: usize,
+        );
+        fn mult_pippenger_cpu_affine_sz() -> usize;
+    }
+
+    let npoints = points.len();
+    if npoints != scalars.len() {
+        panic!("length mismatch")
+    }
+    if std::mem::size_of::<G>() != unsafe { mult_pippenger_cpu_affine_sz() } {
+        panic!("affine point layout mismatch")
+    }
+
+    let mut ret = G::Projective::zero();
+    unsafe {
+        mult_pippenger_cpu(
+            &mut ret as *mut _ as *mut _,
+            points.as_ptr() as *const _,
+            npoints,
+            scalars.as_ptr() as *const _,
+            nthreads,
+        )
+    };
+
+    ret
+}
+
 #[cfg(any(feature = "bls12_381", feature = "bls12_377", feature = "bn254"))]
 pub fn multi_scalar_mult_fp2_arkworks<G: AffineCurve>(
     points: &[G],

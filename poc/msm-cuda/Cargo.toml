@@ -43,3 +43,7 @@ criterion = { version = "0.3", features = [ "html_reports" ] }
 [[bench]]
 name = "msm"
 harness = false
+
+[[bench]]
+name = "msm_cpu"
+harness = false
