@@ -47,3 +47,7 @@ criterion = { version = "0.3", features = [ "html_reports" ] }
 [[bench]]
 name = "ntt"
 harness = false
+
+[[bench]]
+name = "ntt_batch"
+harness = false

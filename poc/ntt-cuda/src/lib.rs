@@ -24,6 +24,30 @@ extern "C" {
         iters: usize,
         elapsed_ms: *mut f32,
     ) -> sppark::Error;
+
+    fn compute_ntt_batch(
+        device_id: usize,
+        inout: *mut core::ffi::c_void,
+        lg_domain_size: u32,
+        batch: usize,
+        nstreams: usize,
+        ntt_order: NTTInputOutputOrder,
+        ntt_direction: NTTDirection,
+        ntt_type: NTTType,
+    ) -> sppark::Error;
+
+    fn bench_ntt_batch_device(
+        device_id: usize,
+        inout: *mut core::ffi::c_void,
+        lg_domain_size: u32,
+        batch: usize,
+        nstreams: usize,
+        ntt_order: NTTInputOutputOrder,
+        ntt_direction: NTTDirection,
+        ntt_type: NTTType,
+        iters: usize,
+        elapsed_ms: *mut f32,
+    ) -> sppark::Error;
 }
 
 /// Compute an in-place NTT on the input data.
@@ -155,6 +179,87 @@ pub fn bench_NTT_device<T>(
             order,
             direction,
             ntt_type,
+            iters,
+            &mut elapsed_ms,
+        )
+    };
+
+    if err.code != 0 {
+        panic!("{}", String::from(err));
+    }
+
+    std::time::Duration::from_secs_f64(elapsed_ms as f64 / 1e3)
+}
+
+fn lg_batch_domain_size<T>(inout: &[T], batch: usize) -> u32 {
+    if batch == 0 || inout.len() % batch != 0 {
+        panic!("inout.len() is not a multiple of batch");
+    }
+    let len = inout.len() / batch;
+    if (len & (len - 1)) != 0 {
+        panic!("inout.len() / batch is not power of 2");
+    }
+    len.trailing_zeros()
+}
+
+/// Compute `batch` independent in-place NTTs on `inout`, which holds the
+/// inputs back to back, spreading them over `nstreams` (1 through 3) GPU
+/// streams.
+#[allow(non_snake_case)]
+pub fn NTT_batch<T>(
+    device_id: usize,
+    inout: &mut [T],
+    batch: usize,
+    nstreams: usize,
+    order: NTTInputOutputOrder,
+    direction: NTTDirection,
+) {
+    let lg_domain_size = lg_batch_domain_size(inout, batch);
+
+    let err = unsafe {
+        compute_ntt_batch(
+            device_id,
+            inout.as_mut_ptr() as *mut _,
+            lg_domain_size,
+            batch,
+            nstreams,
+            order,
+            direction,
+            NTTType::Standard,
+        )
+    };
+
+    if err.code != 0 {
+        panic!("{}", String::from(err));
+    }
+}
+
+/// Benchmarking aid: run `iters` rounds of `batch` NTTs on a device-resident
+/// copy of `inout` and return the GPU time they took, excluding allocation
+/// and host<->device transfers.
+#[allow(non_snake_case)]
+pub fn bench_NTT_batch_device<T>(
+    device_id: usize,
+    inout: &mut [T],
+    batch: usize,
+    nstreams: usize,
+    order: NTTInputOutputOrder,
+    direction: NTTDirection,
+    iters: usize,
+) -> std::time::Duration {
+    let lg_domain_size = lg_batch_domain_size(inout, batch);
+
+    let mut elapsed_ms = 0f32;
+    let err = unsafe {
+        bench_ntt_batch_device(
+            device_id,
+            inout.as_mut_ptr() as *mut _,
+            lg_domain_size,
+            batch,
+            nstreams,
+            order,
+            direction,
+            NTTType::Standard,
             iters,
             &mut elapsed_ms,
         )
